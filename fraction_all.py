@@ -12,6 +12,10 @@ import os
 realizations = ['0','1','2']
 bands = ['g','r','i','z']
 tiles = ['DES0347-5540','DES2329-5622','DES2357-6456']
+INPUT_DIR = 'mof'
+OUT_DIR = 'mof/flags_removed'
+
+REMOVE_FLAGGED = True
 
 for real in realizations:
 
@@ -21,39 +25,38 @@ for real in realizations:
 
             # check if there is a folder for the results, if not create it
 
-            if not os.path.isdir('../results/'+real):
-                os.mkdir('../results/'+real)
-
-            if not os.path.isdir('../results/'+real+'/'+tile):
-                os.mkdir('../results/'+real+'/'+tile)
-
-            if not os.path.isdir('../results/'+real+'/'+tile+'/'+band):
-                os.mkdir('../results/'+real+'/'+tile+'/'+band)
-
-
+            path = '../results/'+OUT_DIR+'/'+real+'/'+tile+'/'+band
+            if not os.path.isdir(path):
+                os.makedirs(path)
+            
+            
             # data plus injections
 
-            cat_inj = pf.open("/home/vinicius/Documents/balrog/fraction_recovered/data/"+real+"/"+tile+"/"+tile+"_"+band+"_cat.fits")
+            cat_inj = pf.open("/home/vinicius/Documents/balrog/fraction_recovered/data/"+INPUT_DIR+"/"+real+"/"+tile+"/"+tile+"_"+band+"_cat.fits")
             cat_inj.info()
             tab_inj = cat_inj[1].data
             my_format_inj = tab_inj.formats
-            print(tab_inj.names)
-            print(my_format_inj)
-
+            
             # truth catalogs of injections
 
-            cat_true = pf.open("/home/vinicius/Documents/balrog/fraction_recovered/data/"+real+"/"+tile+"/"+tile+"_"+real+"_balrog_truth_cat.fits")
+            cat_true = pf.open("/home/vinicius/Documents/balrog/fraction_recovered/data/"+INPUT_DIR+"/"+real+"/"+tile+"/"+tile+"_"+real+"_balrog_truth_cat.fits")
             cat_true.info()
             tab_true = cat_true[1].data
             my_format_true = tab_true.formats
-            print(tab_true.names)
-            print(my_format_true)
-
+            
             ra_i  = tab_inj['ALPHAWIN_J2000']
             dec_i = tab_inj['DELTAWIN_J2000']
             mag_i = tab_inj['MAG_AUTO']
             mag_i_err = tab_inj['MAGERR_AUTO']
+            flags = tab_inj['FLAGS']
 
+            if(REMOVE_FLAGGED == True):
+                mask = (flags == 0)    
+                ra_i  = ra_i[mask]
+                dec_i = dec_i[mask]
+                mag_i = mag_i[mask]
+                mag_i_err = mag_i_err[mask]
+  
             ra_t  = tab_true['ra']
             dec_t = tab_true['dec']
             mag_t = tab_true['cm_mag']
@@ -69,13 +72,10 @@ for real in realizations:
 
             mag_t_band = np.array([mag_t[i][ind_band] for i in range(len(mag_t))])
 
-            print(np.min(mag_t_band),np.max(mag_t_band))
-
             min_mag = np.min(mag_t_band)
             max_mag = 26.#np.max(mag_t_band)
 
             mag_bins = np.linspace(min_mag-0.01,max_mag+0.01,np.rint((max_mag-min_mag+0.02)/0.25)+1)
-            print(mag_bins)
 
 
             fig = plt.figure()
@@ -84,7 +84,7 @@ for real in realizations:
             plt.title('Magnitude Distribution of the Injected Galaxies',size=16)
             plt.xlabel(band+' [mag]',size=16)
             plt.ylabel('# of galaxies',size=16)
-            plt.savefig('../results/'+real+'/'+tile+'/'+band+'/mag_'+band+'_dist_injected.png')
+            plt.savefig('../results/'+OUT_DIR+'/'+real+'/'+tile+'/'+band+'/mag_'+band+'_dist_injected.png')
             plt.close()
 
 
@@ -146,10 +146,10 @@ for real in realizations:
             plt.title('Magnitude versus the Fraction of Recovered Galaxies',size=16)
             plt.xlabel(band+' [mag]',size=16)
             plt.ylabel('Fraction',size=16)
-            plt.savefig('../results/'+real+'/'+tile+'/'+band+'/mag_'+band+'_vs_fraction.png')
+            plt.savefig('../results/'+OUT_DIR+'/'+real+'/'+tile+'/'+band+'/mag_'+band+'_vs_fraction.png')
             plt.close()
 
-            np.savetxt('../results/'+real+'/'+tile+'/'+band+'/mag_fraction.txt',np.array([mean_mag_bin,frac_bin]).T)
+            np.savetxt('../results/'+OUT_DIR+'/'+real+'/'+tile+'/'+band+'/mag_fraction.txt',np.array([mean_mag_bin,frac_bin]).T)
 
             mag_t_band = np.array(mag_t_band[flag_match == 1])
             mag_inj    = np.array([matched_elements_min[i][0][0][0] for i in range(len(matched_elements_min))])
@@ -162,10 +162,10 @@ for real in realizations:
             plt.xlabel(band+' [mag]',size=16)
             plt.ylabel('$\Delta m$',size=16)
             plt.ylim(-2,2)
-            plt.savefig('../results/'+real+'/'+tile+'/'+band+'/mag_'+band+'_vs_deltamag.png')
+            plt.savefig('../results/'+OUT_DIR+'/'+real+'/'+tile+'/'+band+'/mag_'+band+'_vs_deltamag.png')
             plt.close()
 
-            np.savetxt('../results/'+real+'/'+tile+'/'+band+'/mag_deltamag.txt',np.array([mag_t_band,mag_t_band - mag_inj]).T)
+            np.savetxt('../results/'+OUT_DIR+'/'+real+'/'+tile+'/'+band+'/mag_deltamag.txt',np.array([mag_t_band,mag_t_band - mag_inj]).T)
 
             delta_m = mag_t_band - mag_inj
             mask_d  = (delta_m > -2.)*(delta_m < 2)
@@ -174,7 +174,7 @@ for real in realizations:
             std_dm  = np.std(delta_m)
             print(mean_dm,std_dm)
 
-            np.savetxt('../results/'+real+'/'+tile+'/'+band+'/mag_deltamag.txt',np.array([mean_dm,std_dm]))
+            np.savetxt('../results/'+OUT_DIR+'/'+real+'/'+tile+'/'+band+'/mag_deltamag.txt',np.array([mean_dm,std_dm]))
 
 
 
