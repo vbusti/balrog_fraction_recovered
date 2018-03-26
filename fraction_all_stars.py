@@ -13,9 +13,9 @@ realizations = ['0','1','2']
 bands = ['g','r','i','z']
 tiles = ['DES0347-5540','DES2329-5622','DES2357-6456']
 INPUT_DIR = 'blank_test'
-OUT_DIR = 'blank_test/no_flags/galaxies2'
-OBJECT = 'galaxies' # 'galaxies' or 'stars'
-RADIUS_MATCH = 1.0
+OUT_DIR = 'blank_test/flags_removed/stars'
+OBJECT = 'stars' # 'galaxies' or 'stars'
+RADIUS_MATCH = 0.1
 
 REMOVE_FLAGGED = True
 
@@ -51,6 +51,25 @@ for real in realizations:
         mag_rs = tab_trues['g_Corr'] - tab_trues['gr_Corr']
         mag_is = tab_trues['g_Corr'] - tab_trues['gr_Corr'] - tab_trues['ri_Corr']
         mag_zs = tab_trues['g_Corr'] - tab_trues['gr_Corr'] - tab_trues['ri_Corr'] - tab_trues['iz_Corr']
+
+        # data plus injections
+
+        cat_inj = pf.open("/home/vinicius/Documents/balrog/fraction_recovered/data/"+INPUT_DIR+"/"+real+"/"+tile+"/"+tile+"_mof.fits")
+        cat_inj.info()
+        tab_inj = cat_inj[1].data
+        my_format_inj = tab_inj.formats
+                        
+        ra_i  = tab_inj['ra']
+        dec_i = tab_inj['dec']
+        mag_i = tab_inj['cm_mag']
+        flags = tab_inj['flags']
+        cm_flags = tab_inj['cm_flags']
+
+        if(REMOVE_FLAGGED == True):
+            mask = (flags == 0)*(cm_flags == 0)    
+            ra_i  = ra_i[mask]
+            dec_i = dec_i[mask]
+            mag_i = mag_i[mask]
  
 
         flag_match_all = [[] for _ in range(len(bands))]
@@ -64,28 +83,7 @@ for real in realizations:
             if not os.path.isdir(path):
                 os.makedirs(path)
             
-            
-            # data plus injections
-
-            cat_inj = pf.open("/home/vinicius/Documents/balrog/fraction_recovered/data/"+INPUT_DIR+"/"+real+"/"+tile+"/"+tile+"_"+band+"_cat.fits")
-            cat_inj.info()
-            tab_inj = cat_inj[1].data
-            my_format_inj = tab_inj.formats
-                        
-            ra_i  = tab_inj['ALPHAWIN_J2000']
-            dec_i = tab_inj['DELTAWIN_J2000']
-            mag_i = tab_inj['MAG_AUTO']
-            mag_i_err = tab_inj['MAGERR_AUTO']
-            flags = tab_inj['FLAGS']
-
-            if(REMOVE_FLAGGED == True):
-                mask = (flags == 0)    
-                ra_i  = ra_i[mask]
-                dec_i = dec_i[mask]
-                mag_i = mag_i[mask]
-                mag_i_err = mag_i_err[mask]
-  
-
+                                  
             if(band == 'g'):
                 ind_band = 0
                 mag_star = mag_gs
@@ -99,7 +97,9 @@ for real in realizations:
                 ind_band = 3     
                 mag_star = mag_zs  
 
-            mag_t_band = np.array([mag_t[i][ind_band] for i in range(len(mag_t))])
+            mag_t_band = mag_t[:,ind_band]
+
+            mag_i_band = mag_i[:,ind_band]
 
             if(OBJECT == 'stars'):
                 ra_t  = ra_ts
@@ -124,8 +124,7 @@ for real in realizations:
                 mini_mask = (np.abs(ra_i-ra_t[i]) < 0.01)*(np.abs(dec_i-dec_t[i])<0.01)
                 ra_temp = ra_i[mini_mask]
                 dec_temp = dec_i[mini_mask]
-                mag_temp = mag_i[mini_mask]
-                mag_err_temp = mag_i_err[mini_mask]
+                mag_temp = mag_i_band[mini_mask]
   
  
                 for j in range(len(ra_temp)):
@@ -133,16 +132,14 @@ for real in realizations:
                     theta = 206300.*np.arccos(cos_theta)
                     if(theta < RADIUS_MATCH):
                         flag_match[i] = 1
-                        matched_elements_all[i].append([mag_temp[j],mag_err_temp[j],theta])
+                        matched_elements_all[i].append([mag_temp[j],theta])
                 if(flag_match[i] == 0):
-                    matched_elements_min[i].append([[-999,-999,-999]])
-                elif(flag_match[i] == 1 and len(np.array(matched_elements_all[i]) < 3)):
-                    matched_elements_min[i].append(matched_elements_all[i])
+                    matched_elements_min[i].append([-999,-999])
                 else:
                     print('hi ',i)
                     print(matched_elements_all[i])
                     flag_blend[i] = 1
-                    z = np.array([matched_elements_all[i][k][2] for k in range(len(matched_elements_all[i]))])
+                    z = np.array([matched_elements_all[i][k][1] for k in range(len(matched_elements_all[i]))])
                     ind_min, = np.where(z == np.min(z))  
                     matched_elements_min[i].append(matched_elements_all[i][ind_min[0]]) 
                     print(matched_elements_min[i])
@@ -166,6 +163,7 @@ for real in realizations:
                 else:
                     frac_bin[i] = 2
 
+
             mask = (mask_zero == 1)
 
             mean_mag_bin = mean_mag_bin[mask]
@@ -183,12 +181,13 @@ for real in realizations:
 
             np.savetxt('../results/'+OUT_DIR+'/'+real+'/'+tile+'/'+band+'/mag_fraction.txt',np.array([mean_mag_bin,frac_bin]).T)
 
-            mag_t_band = np.array(mag_t_band[flag_match == 1])
-            mag_inj    = np.array([matched_elements_min[i][0][0][0] for i in range(len(matched_elements_min))])
+            mag_t_band = np.array(mag_t_band)[flag_match == 1]
+            mag_inj    = [matched_elements_min[i][0][0] for i in range(len(matched_elements_min))]
             mag_all[ind_band].append(mag_inj)
             print('mag_all')
-            print(mag_all[ind_band])   
-            mag_inj    = mag_inj[flag_match == 1]
+            print(mag_inj) 
+            mag_inj = np.array(mag_inj)   
+            mag_inj = mag_inj[flag_match == 1]
 
             fig = plt.figure()
             ax = fig.add_subplot(1,1,1)
@@ -254,7 +253,7 @@ for real in realizations:
             plt.xlabel('g-r true',size=16)
             plt.ylabel('$\Delta_{g-r}$',size=16)
             plt.xlim(-0.5,2) 
-            plt.ylim(-0.1,0.1)
+            plt.ylim(-4,4)
             plt.savefig('../results/'+OUT_DIR+'/'+real+'/'+tile+'/colors/gmr_zoom.png')
             plt.close() 
 
@@ -274,11 +273,6 @@ for real in realizations:
             gmr    = gmr[mask_c]
             gmr_t  = gmr_t[mask_c]
 
-            # check if there is a folder for the results, if not create it
-
-            #path = '../results/'+OUT_DIR+'/'+real+'/'+tile+'/colors'
-            #if not os.path.isdir(path):
-            #os.makedirs(path)
 
             fig = plt.figure()
             ax = fig.add_subplot(1,1,1)
@@ -300,7 +294,7 @@ for real in realizations:
             plt.xlabel('r-i true',size=16)
             plt.ylabel('$\Delta_{r-i}$',size=16)
             plt.xlim(-0.5,1.5)
-            plt.ylim(-0.1,0.1)
+            plt.ylim(-4,4)
             plt.savefig('../results/'+OUT_DIR+'/'+real+'/'+tile+'/colors/rmi_zoom.png')
             plt.close() 
 
@@ -318,11 +312,6 @@ for real in realizations:
             gmr    = gmr[mask_c]
             gmr_t  = gmr_t[mask_c]
 
-            # check if there is a folder for the results, if not create it
-
-            #path = '../results/'+OUT_DIR+'/'+real+'/'+tile+'/colors'
-            #if not os.path.isdir(path):
-            #os.makedirs(path)
             
 
             fig = plt.figure()
@@ -345,7 +334,7 @@ for real in realizations:
             plt.xlabel('i-z true',size=16)
             plt.ylabel('$\Delta_{i-z}$',size=16)
             plt.xlim(-0.5,1.5) 
-            plt.ylim(-0.1,0.1)
+            plt.ylim(-4,4)
             plt.savefig('../results/'+OUT_DIR+'/'+real+'/'+tile+'/colors/imz_zoom.png')
             plt.close() 
 
@@ -392,7 +381,7 @@ for real in realizations:
             plt.xlabel('g-r true',size=16)
             plt.ylabel('$\Delta_{g-r}$',size=16)
             plt.xlim(-0.5,2) 
-            plt.ylim(-0.2,0.2)
+            plt.ylim(-4,4)
             plt.savefig('../results/'+OUT_DIR+'/'+real+'/'+tile+'/colors/gmr_zoom.png')
             plt.close() 
 
@@ -434,7 +423,7 @@ for real in realizations:
             plt.xlabel('r-i true',size=16)
             plt.ylabel('$\Delta_{r-i}$',size=16)
             plt.xlim(-0.5,2) 
-            plt.ylim(-0.1,0.1)
+            plt.ylim(-4,4)
             plt.savefig('../results/'+OUT_DIR+'/'+real+'/'+tile+'/colors/rmi_zoom.png')
             plt.close() 
 
@@ -474,7 +463,7 @@ for real in realizations:
             plt.xlabel('i-z true',size=16)
             plt.ylabel('$\Delta_{i-z}$',size=16)
             plt.xlim(-0.5,1) 
-            plt.ylim(-0.1,0.1)
+            plt.ylim(-4,4)
             plt.savefig('../results/'+OUT_DIR+'/'+real+'/'+tile+'/colors/imz_zoom.png')
             plt.close() 
 
